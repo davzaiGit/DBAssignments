@@ -1,0 +1,323 @@
+---
+title: "Analiza bazy Linie Lotnicze"
+author: "Dawid Piskadło"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+### Wstępna uwaga:
+
+    W zadaniach 1,2,4,5,10 dane są zaokrąglone w dół do pełnych minut.
+
+
+```{r setup, include=FALSE}
+library(DBI)
+library(odbc)
+library(knitr)
+library(config)
+
+connect_info <- get(file = "~/config.yml")
+
+connect <- dbConnect(odbc::odbc(), Driver = connect_info$driver, Server=connect_info$server,
+Database=connect_info$database,
+Uid=connect_info$uid,
+Pwd=connect_info$pwd)
+
+knitr::opts_chunk$set(connection = "connect")
+
+```
+
+## Zadanie 1:
+
+```{r task1, include=FALSE}
+avg_delay <- DBI::dbGetQuery(connect," SELECT (FLOOR(AVG(arr_delay_new))) AS średnie_opóźnienie
+ FROM dbad_flights.dbo.Flight_delays")
+```
+
+##### Zapytanie:
+
+    SELECT (FLOOR(AVG(arr_delay_new))) AS średnie_opóźnienie
+    FROM dbad_flights.dbo.Flight_delays
+
+##### Wynik: 
+
+Średnie opóźnienie przylotu było równe `r avg_delay` minut.
+
+## Zadanie 2:
+```{r task2, include=FALSE}
+max_delay <- DBI::dbGetQuery(connect,"SELECT FLOOR(MAX(arr_delay_new)) AS średnie_opóźnienie FROM dbad_flights.dbo.Flight_delays")
+```
+  
+##### Zapytanie:
+
+    SELECT FLOOR(MAX(arr_delay_new)) AS średnie_opóźnienie 
+    FROM dbad_flights.dbo.Flight_delays
+
+
+##### Wynik:
+
+Największe opóźnienie przylotu było równe `r max_delay` minut.
+
+## Zadanie 3:
+```{r task3, include=FALSE}
+max_delay_flight <- DBI::dbGetQuery(connect," SELECT TOP 1 carrier,
+			fl_num,
+			origin_city_name,
+			dest_city_name,
+			fl_date,
+			arr_delay_new
+
+ FROM dbad_flights.dbo.Flight_delays AS F1
+		INNER JOIN dbad_flights.dbo.Airlines AS F2
+				ON F1.airline_id = F2.airline_id
+ORDER BY F1.arr_delay_new DESC")
+```
+  
+##### Zapytanie:
+
+     SELECT TOP 1 carrier,
+                  fl_num,
+                  origin_city_name,
+                  dest_city_name,
+                  fl_date,
+                  arr_delay_new
+                  
+     FROM dbad_flights.dbo.Flight_delays AS F1
+          INNER JOIN dbad_flights.dbo.Airlines AS F2
+                  ON F1.airline_id = F2.airline_id
+     ORDER BY F1.arr_delay_new DESC
+
+
+##### Wynik:
+
+Największe opóźnienie przylotu miał następujący lot:  
+
+`r kable(max_delay_flight)`
+
+## Zadanie 4:
+```{r task4, include=FALSE}
+avg_delay_weekdays <- DBI::dbGetQuery(connect,"SELECT  weekday_name,
+		FLOOR(AVG(arr_delay_new)) AS avg_delay
+FROM dbad_flights.dbo.Flight_delays AS F1
+	INNER JOIN dbad_flights.dbo.Weekdays AS W1
+			ON F1.day_of_week = W1.weekday_id
+GROUP BY weekday_name,weekday_id
+ORDER BY AVG(arr_delay_new) DESC")
+```
+  
+##### Zapytanie:
+
+    SELECT  weekday_name,
+            FLOOR(AVG(arr_delay_new)) AS avg_delay
+    FROM dbad_flights.dbo.Flight_delays AS F1
+         INNER JOIN dbad_flights.dbo.Weekdays AS W1
+                ON F1.day_of_week = W1.weekday_id
+    GROUP BY weekday_name,weekday_id
+    ORDER BY AVG(arr_delay_new) DESC
+
+
+##### Wynik:
+
+Tabela najgorszych dni do podróżowania pod względem opóźnień przylotu prezentuje się następująco:
+
+`r kable(avg_delay_weekdays)`
+
+## Zadanie 5:
+```{r task5, include=FALSE}
+sf_flights <- DBI::dbGetQuery(connect,"SELECT airline_name,
+		FLOOR(AVG(F1.arr_delay_new)) AS średnie_opóźnienie
+FROM dbad_flights.dbo.Airlines AS A1
+	INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+			ON F1.airline_id = A1.airline_id
+WHERE  F1.airline_id IN (SELECT F2.airline_id
+						FROM dbad_flights.dbo.Flight_delays AS F2
+						WHERE F2.origin = 'SFO')
+GROUP BY airline_name
+ORDER BY AVG(arr_delay_new) DESC")
+```
+  
+##### Zapytanie:
+
+    SELECT airline_name,
+           FLOOR(AVG(F1.arr_delay_new)) AS średnie_opóźnienie
+    FROM dbad_flights.dbo.Airlines AS A1
+       INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+               ON F1.airline_id = A1.airline_id
+    WHERE  F1.airline_id IN (SELECT F2.airline_id
+                             FROM dbad_flights.dbo.Flight_delays AS F2
+                             WHERE F2.origin = 'SFO')
+    GROUP BY airline_name
+    ORDER BY FLOOR(AVG(arr_delay_new)) DESC
+
+
+##### Wynik:
+
+Linie latające z San Francisco posiadające najmniejsze opóźnienia to odpowiednio JetBlue Airways,American Airlines i Frontier Airlines.
+Tabela tych linii prezentuje się następująco:
+
+`r kable(sf_flights)`
+
+## Zadanie 6:
+```{r task6, include=FALSE}
+proportion <- DBI::dbGetQuery(connect,"SELECT ROUND((CONVERT(float,COUNT(*),2)/(SELECT COUNT(DISTINCT airline_id)
+				FROM dbad_flights.dbo.Flight_delays)),3)
+FROM (SELECT A1.airline_name
+FROM dbad_flights.dbo.Airlines AS A1
+	INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+			ON F1.airline_id = A1.airline_id
+GROUP BY airline_name
+HAVING AVG(arr_delay_new)>10) AS T1")
+```
+  
+##### Zapytanie:
+
+    SELECT ROUND((CONVERT(float,COUNT(*),2)/(SELECT COUNT(DISTINCT airline_id)
+                                             FROM dbad_flights.dbo.Flight_delays)),3)
+    FROM (SELECT A1.airline_name
+          FROM dbad_flights.dbo.Airlines AS A1
+             INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+                     ON F1.airline_id = A1.airline_id
+    GROUP BY airline_name
+    HAVING AVG(arr_delay_new)>10) AS T1
+
+
+##### Wynik:
+
+Stosunek liczby linii lotniczych posiadających regularne opóźnienia do liczby wszystkich linii lotniczych znajdujących się w tabeli Flight_delays wynosi `r proportion`.
+
+## Zadanie 7:
+
+```{r task7, include=FALSE}
+avg_arr_delay <- DBI::dbGetQuery(connect," SELECT arr_delay_new FROM dbad_flights.dbo.Flight_delays")
+
+avg_dep_delay <- DBI::dbGetQuery(connect," SELECT dep_delay_new FROM dbad_flights.dbo.Flight_delays")
+
+avg_arr_delay_conv <- as.vector(unlist(avg_arr_delay))
+
+avg_dep_delay_conv <- as.vector(unlist(avg_dep_delay))
+
+avg_dep_arr_temp_result <- cor.test(avg_dep_delay_conv,avg_arr_delay_conv, method = "pearson")
+
+avg_dep_arr_correlation <- round(avg_dep_arr_temp_result$estimate,3)
+```
+
+##### Zapytania:
+
+    SELECT arr_delay_new FROM dbad_flights.dbo.Flight_delayss
+    
+    SELECT dep_delay_new FROM dbad_flights.dbo.Flight_delay
+    
+    R:
+    avg_arr_delay_conv <- as.vector(unlist(avg_arr_delay))
+
+    avg_dep_delay_conv <- as.vector(unlist(avg_dep_delay))
+
+    avg_dep_arr_temp_result <- cor.test(avg_dep_delay_conv,avg_arr_delay_conv, method = "pearson")
+
+    avg_dep_arr_correlation <- round(avg_dep_arr_temp_result$estimate,3)
+    
+
+##### Wynik: 
+
+Współczynnik korelacji Pearsona między opóźnieniami przylotów a opóźnieniami wylotów wynosi `r avg_dep_arr_correlation`.
+
+## Zadanie 8:
+
+```{r task8, include=FALSE}
+max_avg_delay_increase <- DBI::dbGetQuery(connect,"SELECT TOP 1 A1.airline_name,
+		(AVG(F1.arr_delay_new)-(SELECT AVG(F2.arr_delay_new)
+									FROM dbad_flights.dbo.Flight_delays AS F2
+										JOIN dbad_flights.dbo.Airlines AS A2
+											ON F2.airline_id = A2.airline_id
+									WHERE A2.airline_name = A1.airline_name AND F2.month = 7 AND F2.day_of_month<=23
+									GROUP BY A2.airline_name)) AS 'delay_increase'
+	FROM dbad_flights.dbo.Airlines AS A1
+		INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+				ON A1.airline_id = F1.airline_id
+	WHERE F1.month = 7 AND F1.day_of_month > 23 
+	GROUP BY A1.airline_name
+	ORDER BY delay_increase DESC")
+```
+
+##### Zapytanie:
+
+    SELECT TOP 1 A1.airline_name,
+                 (AVG(F1.arr_delay_new)-(SELECT AVG(F2.arr_delay_new)
+                                         FROM dbad_flights.dbo.Flight_delays AS F2
+                                           JOIN dbad_flights.dbo.Airlines AS A2
+                                           ON F2.airline_id = A2.airline_id
+                                           WHERE A2.airline_name = A1.airline_name AND F2.month = 7 AND F2.day_of_month<=23
+                                           GROUP BY A2.airline_name)) AS 'delay_increase'
+    FROM dbad_flights.dbo.Airlines AS A1
+    INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+           ON A1.airline_id = F1.airline_id
+    WHERE F1.month = 7 AND F1.day_of_month > 23 
+    GROUP BY A1.airline_name
+    ORDER BY test DESC
+
+##### Wynik: 
+
+Linią posiadającą najwyższy przyrost średniego opóźnienia między 01-23 lipca a 24-31 lipca była następująca linia lotnicza:
+
+`r kable(max_avg_delay_increase)`
+
+## Zadanie 9:
+
+```{r task9, include=FALSE}
+sfo_pdx_eug <- DBI::dbGetQuery(connect,"SELECT airline_name
+FROM dbad_flights.dbo.Airlines AS A1
+	INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+			ON F1.airline_id = A1.airline_id
+			INNER JOIN dbad_flights.dbo.Flight_delays AS F2
+				ON F1.airline_id = F2.airline_id
+WHERE ((F1.origin = 'SFO' AND F1.dest = 'PDX') OR (F1.origin = 'SFO' AND F1.dest = 'EUG')) AND (((F2.origin = 'SFO' AND F2.dest = 'PDX') OR (F2.origin = 'SFO' AND F2.dest = 'EUG')) AND F1.dest != F2.dest)
+GROUP BY airline_name")
+```
+
+##### Zapytanie:
+
+    SELECT airline_name
+    FROM dbad_flights.dbo.Airlines AS A1
+      INNER JOIN dbad_flights.dbo.Flight_delays AS F1
+             ON F1.airline_id = A1.airline_id
+             INNER JOIN dbad_flights.dbo.Flight_delays AS F2
+                     ON F1.airline_id = F2.airline_id
+    WHERE ((F1.origin = 'SFO' AND F1.dest = 'PDX') OR (F1.origin = 'SFO' AND F1.dest = 'EUG')) AND  
+    (((F2.origin = 'SFO' AND F2.dest = 'PDX') OR (F2.origin = 'SFO' AND F2.dest = 'EUG')) AND F1.dest != F2.dest)
+    GROUP BY airline_name
+
+##### Wynik: 
+
+Na trasach zarówno SFO->PDX jak i SFO->EUG latają poniższe linie lotnicze:
+
+`r kable(sfo_pdx_eug)`
+
+## Zadanie 10:
+
+```{r task10, include=FALSE}
+chicago_stanford <- DBI::dbGetQuery(connect,"SELECT origin,
+		dest,
+		FLOOR(AVG(arr_delay_new)) AS avg_delay
+FROM dbad_flights.dbo.Flight_delays
+WHERE (origin = 'MDW' OR origin = 'ORD') AND (dest = 'SFO' OR dest = 'SJC' OR dest = 'OAK') AND crs_dep_time>1400
+GROUP BY origin,dest
+ORDER BY AVG(arr_delay_new) DESC")
+```
+
+##### Zapytanie:
+
+    SELECT origin,
+           dest,
+           FLOOR(AVG(arr_delay_new)) AS avg_delay
+    FROM dbad_flights.dbo.Flight_delays
+    WHERE (origin = 'MDW' OR origin = 'ORD') AND (dest = 'SFO' OR dest = 'SJC' OR dest = 'OAK') AND crs_dep_time>1400
+    GROUP BY origin,dest
+    ORDER BY AVG(arr_delay_new) DESC
+
+##### Wynik: 
+
+Według danych statystycznych najszybszym sposobem na podróż z Chicago do Stanfordu przy założeniu wylotu po godzinie 14:00 będzie lot z Midway do Oakland.
+Tabela średnich opóźnień dla poszczegółnych tras lotu prezentuje się następująco:
+`r kable(chicago_stanford)`
